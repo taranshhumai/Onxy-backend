@@ -11,6 +11,7 @@ from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from dotenv import load_dotenv
+from groq import Groq
 load_dotenv()
 
 app = Flask(__name__)
@@ -424,42 +425,72 @@ def handle_screenshot(data):
         db.session.commit()
         emit('screenshot_received', {'filename': filename})
 
-# ===== GROQ / OPENROUTER INTEGRATION (Optional) =====
-# You can add /command and /approve endpoints here if needed.
-# For now, we rely on the existing client script that calls Railway endpoints.
-# But to keep it simple, we'll add the /command and /approve for client.
+
+# ===== REAL GROQ INTEGRATION =====
+import uuid as _uuid
+
+_groq_client = None
+_command_store = {}
+
+def _get_groq():
+    global _groq_client
+    if _groq_client is None:
+        key = os.getenv("GROQ_API_KEY")
+        if not key:
+            raise RuntimeError("GROQ_API_KEY not set")
+        _groq_client = Groq(api_key=key)
+    return _groq_client
+
+GROQ_SYSTEM = """You are a code generator. Given a user request, output ONLY the exact shell command(s) or Python code to achieve it. No explanation, no markdown, no backticks. If ambiguous, output only: ERROR: clarify. Assume Linux/Android/Termux bash environment."""
+
 @app.route('/command', methods=['POST'])
 def external_command():
-    # This is for the client script (onyx_client.py)
-    data = request.json
-    user_cmd = data.get('command')
+    data = request.json or {}
+    user_cmd = (data.get('command') or '').strip()
     if not user_cmd:
         return jsonify({'error': 'No command'}), 400
-    # Use Groq (if key present) or fallback to Llama via OpenRouter
-    # For brevity, we'll use a simple static response for testing
-    # Replace with Groq API call as per earlier setup.
-    # We'll just echo for now.
+    try:
+        client = _get_groq()
+        completion = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[
+                {"role": "system", "content": GROQ_SYSTEM},
+                {"role": "user", "content": user_cmd}
+            ],
+            temperature=0.1,
+            max_tokens=500
+        )
+        code = completion.choices[0].message.content.strip()
+    except Exception as e:
+        return jsonify({'error': f'Groq error: {str(e)}'}), 500
+
+    cmd_id = str(_uuid.uuid4())
+    _command_store[cmd_id] = code
     return jsonify({
-        'command_id': str(uuid.uuid4()),
+        'command_id': cmd_id,
         'human_readable_summary': f"Command: {user_cmd}",
         'verified_prerequisites': ['✅ Python', '✅ Internet'],
         'execution_plan': {
             'steps': ['Run the generated code'],
-            'code_snippet': f"echo 'Executing: {user_cmd}'",  # Placeholder
+            'code_snippet': code,
             'expected_output_format': 'Terminal output'
         },
         'risk_assessment': {
-            'what_could_go_wrong': 'Review code',
+            'what_could_go_wrong': 'Review code before execution',
             'rollback_command': 'N/A'
         }
     })
 
 @app.route('/approve', methods=['POST'])
 def approve_command():
-    data = request.json
+    data = request.json or {}
     cmd_id = data.get('command_id')
-    # For demo, just return a static code
-    return jsonify({'code': 'echo "Approved and executed"'})
+    code = _command_store.pop(cmd_id, None)
+    if not code:
+        return jsonify({'error': 'Command not found or expired'}), 404
+    return jsonify({'code': code})
+
+
 
 # ===== CREATE ADMIN USER =====
 with app.app_context():

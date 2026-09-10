@@ -12,3 +12,4 @@ qrcode==7.4.2
 Pillow==10.0.0
 requests
 setuptools>=68.0.0
+groq
