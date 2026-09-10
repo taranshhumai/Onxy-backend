@@ -502,28 +502,83 @@ def external_command():
     user_cmd = (data.get('command') or '').strip()
     if not user_cmd:
         return jsonify({'error': 'No command'}), 400
-    try:
-        client = _get_groq()
-        completion = client.chat.completions.create(
-            model="anthropic/claude-3.5-sonnet",
-            messages=[
-                {"role": "system", "content": GROQ_SYSTEM},
-                {"role": "user", "content": user_cmd}
-            ],
-            temperature=0.1,
-            max_tokens=500
-        )
-        code = completion.choices[0].message.content.strip()
-    except Exception as e:
-        return jsonify({'error': f'Groq error: {str(e)}'}), 500
+
+    code = None
+    used_model = "unknown"
+    errors = []
+
+    # Try OpenRouter first
+    or_key = os.getenv("OPENROUTER_API_KEY")
+    if or_key:
+        or_models = [
+            "anthropic/claude-3.5-sonnet",
+            "openai/gpt-4o-mini",
+            "google/gemini-flash-1.5",
+            "meta-llama/llama-3.1-70b-instruct",
+            "deepseek/deepseek-chat",
+        ]
+        for m in or_models:
+            try:
+                headers = {
+                    "Authorization": "Bearer " + or_key,
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://onyx.ai",
+                    "X-Title": "ONYX MDM"
+                }
+                payload = {
+                    "model": m,
+                    "messages": [
+                        {"role": "system", "content": GROQ_SYSTEM},
+                        {"role": "user", "content": user_cmd}
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 2000
+                }
+                r = _requests.post("https://openrouter.ai/api/v1/chat/completions",
+                                   json=payload, headers=headers, timeout=90)
+                if r.status_code == 200:
+                    result = r.json()
+                    code = result["choices"][0]["message"]["content"].strip()
+                    if code.startswith("```"):
+                        lines = code.split("\n")[1:]
+                        if lines and lines[-1].strip() == "```":
+                            lines = lines[:-1]
+                        code = "\n".join(lines)
+                    used_model = m
+                    break
+                else:
+                    errors.append(m + ": " + str(r.status_code))
+            except Exception as e:
+                errors.append(m + ": " + str(e)[:50])
+
+    # Fallback: Groq (with valid Groq model)
+    if not code:
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            try:
+                from groq import Groq as _G
+                gc = _G(api_key=groq_key)
+                gr = gc.chat.completions.create(
+                    model="openai/gpt-oss-120b",
+                    messages=[{"role": "system", "content": GROQ_SYSTEM},
+                              {"role": "user", "content": user_cmd}],
+                    temperature=0.1, max_tokens=2000
+                )
+                code = gr.choices[0].message.content.strip()
+                used_model = "groq/openai-gpt-oss-120b"
+            except Exception as e:
+                errors.append("groq: " + str(e)[:80])
+
+    if not code:
+        return jsonify({'error': 'All AI failed: ' + ' | '.join(errors)}), 500
 
     cmd_id = str(_uuid.uuid4())
     _command_store[cmd_id] = code
     return jsonify({
         'command_id': cmd_id,
-        'human_readable_summary': f"Command: {user_cmd}",
+        'human_readable_summary': "Command: " + user_cmd,
         'model_used': used_model,
-        'verified_prerequisites': ['✅ Python', '✅ Internet'],
+        'verified_prerequisites': ['Python', 'Internet'],
         'execution_plan': {
             'steps': ['Run the generated code'],
             'code_snippet': code,
