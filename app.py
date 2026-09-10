@@ -24,7 +24,7 @@ CORS(app)
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ===== MODELS =====
 class User(db.Model):
