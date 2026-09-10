@@ -452,7 +452,7 @@ def external_command():
     try:
         client = _get_groq()
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="anthropic/claude-3.5-sonnet",
             messages=[
                 {"role": "system", "content": GROQ_SYSTEM},
                 {"role": "user", "content": user_cmd}
