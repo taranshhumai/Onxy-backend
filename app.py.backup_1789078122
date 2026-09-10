@@ -443,59 +443,6 @@ def _get_groq():
 
 GROQ_SYSTEM = """You are a code generator. Given a user request, output ONLY the exact shell command(s) or Python code to achieve it. No explanation, no markdown, no backticks. If ambiguous, output only: ERROR: clarify. Assume Linux/Android/Termux bash environment."""
 
-# ===== OPENROUTER INTEGRATION =====
-import requests as _requests
-
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODELS = [
-    "anthropic/claude-3.5-sonnet",
-    "openai/gpt-4o-mini",
-    "google/gemini-flash-1.5",
-    "meta-llama/llama-3.1-70b-instruct",
-    "deepseek/deepseek-chat",
-    "qwen/qwen-2.5-coder-32b-instruct",
-]
-
-def generate_code_openrouter(user_prompt):
-    """Generate code via OpenRouter with auto-fallback."""
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise Exception("OPENROUTER_API_KEY missing in Railway variables")
-    last_err = None
-    for model in OPENROUTER_MODELS:
-        try:
-            headers = {
-                "Authorization": "Bearer " + api_key,
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://onyx.ai",
-                "X-Title": "ONYX MDM"
-            }
-            payload = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": GROQ_SYSTEM},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1,
-                "max_tokens": 2000
-            }
-            r = _requests.post(OPENROUTER_URL, json=payload, headers=headers, timeout=90)
-            if r.status_code == 200:
-                result = r.json()
-                code = result["choices"][0]["message"]["content"].strip()
-                if code.startswith("```"):
-                    lines = code.split("\n")[1:]
-                    if lines and lines[-1].strip() == "```":
-                        lines = lines[:-1]
-                    code = "\n".join(lines)
-                return code, model
-            last_err = model + ": HTTP " + str(r.status_code)
-        except Exception as e:
-            last_err = model + ": " + str(e)
-    raise Exception("All OpenRouter models failed. Last: " + str(last_err))
-
-
-
 @app.route('/command', methods=['POST'])
 def external_command():
     data = request.json or {}
@@ -522,7 +469,6 @@ def external_command():
     return jsonify({
         'command_id': cmd_id,
         'human_readable_summary': f"Command: {user_cmd}",
-        'model_used': used_model,
         'verified_prerequisites': ['✅ Python', '✅ Internet'],
         'execution_plan': {
             'steps': ['Run the generated code'],
