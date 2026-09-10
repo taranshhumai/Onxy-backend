@@ -2,7 +2,7 @@
 # ONYX SOVEREIGN C2 – FINAL MERGED BACKEND
 # (Groq/OpenRouter support, SQLAlchemy, JWT, SocketIO, APK builder, QR)
 # =================================================
-import os, json, uuid, datetime, base64, csv, io, qrcode, time, subprocess, shutil, tempfile
+import datetime, os, json, uuid, datetime, base64, csv, io, qrcode, time, subprocess, shutil, tempfile
 from flask import Flask, request, jsonify, send_file, render_template_string
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -610,6 +610,17 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
         print("Admin user created: admin / admin123")
+
+
+
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'ok', 'service': 'onyx-mdm', 'time': str(datetime.datetime.utcnow())}), 200
+
+@app.route('/')
+def root():
+    return jsonify({'service': 'ONYX MDM', 'status': 'live', 'version': '1.0'}), 200
+
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)
