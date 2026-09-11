@@ -77,6 +77,18 @@ class Payload(db.Model):
     file_path = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
+class Product(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(128), nullable=False)
+    price = db.Column(db.Integer, nullable=False)
+    category = db.Column(db.String(64))
+    description = db.Column(db.Text)
+    features = db.Column(db.JSON, default=list)
+    tag = db.Column(db.String(32))
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+
 # ===== DECORATORS =====
 def permission_required(permission):
     def decorator(fn):
@@ -602,6 +614,92 @@ def approve_command():
 
 
 # ===== CREATE ADMIN USER =====
+
+
+# ===== ADMIN PRODUCT ENDPOINTS =====
+@app.route('/api/admin/products', methods=['GET'])
+def admin_list_products():
+    """List all products (public - for storefront)"""
+    prods = Product.query.filter_by(active=True).all()
+    return jsonify([{
+        'id': p.id, 'name': p.name, 'price': p.price,
+        'category': p.category, 'description': p.description,
+        'features': p.features or [], 'tag': p.tag
+    } for p in prods])
+
+@app.route('/api/admin/products/all', methods=['GET'])
+def admin_list_all_products():
+    """List ALL products (admin)"""
+    prods = Product.query.all()
+    return jsonify([{
+        'id': p.id, 'name': p.name, 'price': p.price,
+        'category': p.category, 'description': p.description,
+        'features': p.features or [], 'tag': p.tag, 'active': p.active
+    } for p in prods])
+
+@app.route('/api/admin/products', methods=['POST'])
+def admin_create_product():
+    data = request.json or {}
+    if not data.get('name') or not data.get('price'):
+        return jsonify({'error': 'name and price required'}), 400
+    p = Product(
+        name=data['name'],
+        price=int(data['price']),
+        category=data.get('category', 'General'),
+        description=data.get('description', ''),
+        features=data.get('features', []),
+        tag=data.get('tag', '')
+    )
+    db.session.add(p)
+    db.session.commit()
+    return jsonify({'id': p.id, 'status': 'created'}), 201
+
+@app.route('/api/admin/products/<product_id>', methods=['PUT'])
+def admin_update_product(product_id):
+    p = Product.query.get(product_id)
+    if not p:
+        return jsonify({'error': 'not found'}), 404
+    data = request.json or {}
+    p.name = data.get('name', p.name)
+    p.price = int(data.get('price', p.price))
+    p.category = data.get('category', p.category)
+    p.description = data.get('description', p.description)
+    p.features = data.get('features', p.features)
+    p.tag = data.get('tag', p.tag)
+    p.active = data.get('active', p.active)
+    db.session.commit()
+    return jsonify({'status': 'updated'})
+
+@app.route('/api/admin/products/<product_id>', methods=['DELETE'])
+def admin_delete_product(product_id):
+    p = Product.query.get(product_id)
+    if not p:
+        return jsonify({'error': 'not found'}), 404
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'status': 'deleted'})
+
+@app.route('/api/admin/seed', methods=['POST'])
+def admin_seed_products():
+    """Seed products from JSON (for scraping data)"""
+    data = request.json or {}
+    items = data.get('products', [])
+    count = 0
+    for item in items:
+        if not item.get('name'): continue
+        p = Product(
+            name=item['name'],
+            price=int(item.get('price', 99)),
+            category=item.get('category', 'General'),
+            description=item.get('description', ''),
+            features=item.get('features', []),
+            tag=item.get('tag', '')
+        )
+        db.session.add(p)
+        count += 1
+    db.session.commit()
+    return jsonify({'seeded': count})
+
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(username='admin').first():
