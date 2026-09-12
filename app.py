@@ -749,6 +749,79 @@ Rules:
         'length': len(code)
     })
 
+
+
+# ===== TERMINAL LLM (Script Generator) =====
+@app.route('/api/admin/terminal-llm', methods=['POST', 'OPTIONS'])
+def terminal_llm():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.json or {}
+    prompt = data.get('prompt', '').strip()
+    language = data.get('language', 'auto').strip().lower()
+    if not prompt:
+        return jsonify({'error': 'prompt required'}), 400
+
+    lang_map = {
+        'python': 'Python 3',
+        'javascript': 'JavaScript (Node.js)',
+        'bash': 'Bash shell script',
+        'typescript': 'TypeScript',
+        'go': 'Go',
+        'rust': 'Rust',
+        'html': 'HTML + CSS + JavaScript (single file)'
+    }
+
+    lang_line = f"Language: {lang_map[language]}" if language in lang_map else "Language: Auto-detect best fit"
+
+    full_prompt = f"""You are an expert code generator.
+
+{lang_line}
+
+TASK: {prompt}
+
+STRICT RULES:
+1. Output ONLY raw code — no markdown, no backticks, no explanation
+2. Include all imports and dependencies
+3. Add brief comments for clarity
+4. Production-ready quality
+5. If the task is unclear, output a minimal working version with a comment: # TODO: clarify
+
+Generate the code now."""
+
+    # Retry with 3 attempts
+    last_error = None
+    for attempt in range(3):
+        try:
+            code, model_used = generate_code_openrouter(full_prompt)
+            if code.startswith('```'):
+                lines = code.split('\n')[1:]
+                if lines and lines[-1].strip() == '```':
+                    lines = lines[:-1]
+                code = '\n'.join(lines)
+
+            ext_map = {
+                'python': 'py', 'javascript': 'js', 'bash': 'sh',
+                'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'html': 'html'
+            }
+            ext = ext_map.get(language, 'txt')
+
+            return jsonify({
+                'status': 'generated',
+                'language': language,
+                'model_used': model_used,
+                'code': code,
+                'extension': ext,
+                'length': len(code),
+                'attempts': attempt + 1
+            })
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    return jsonify({'error': f'Failed after 3 attempts: {last_error}'}), 500
+
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(username='admin').first():
