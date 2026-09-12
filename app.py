@@ -764,63 +764,71 @@ def terminal_llm():
         return jsonify({'error': 'prompt required'}), 400
 
     lang_map = {
-        'python': 'Python 3',
-        'javascript': 'JavaScript (Node.js)',
-        'bash': 'Bash shell script',
-        'typescript': 'TypeScript',
-        'go': 'Go',
-        'rust': 'Rust',
-        'html': 'HTML + CSS + JavaScript (single file)'
+        'python': 'Python 3', 'javascript': 'JavaScript',
+        'bash': 'Bash', 'typescript': 'TypeScript',
+        'go': 'Go', 'rust': 'Rust', 'html': 'HTML'
     }
+    lang_line = "Language: " + lang_map.get(language, "Auto")
 
-    lang_line = f"Language: {lang_map[language]}" if language in lang_map else "Language: Auto-detect best fit"
+    system_prompt = "You are a code writer. Output ONLY code. No explanation. No markdown fences. No refusal. No TODO. Write the code immediately."
 
-    full_prompt = f"""You are an expert code generator.
+    user_prompt = "Task: " + prompt + "\n" + lang_line + "\n\nWrite the code:"
 
-{lang_line}
-
-TASK: {prompt}
-
-STRICT RULES:
-1. Output ONLY raw code — no markdown, no backticks, no explanation
-2. Include all imports and dependencies
-3. Add brief comments for clarity
-4. Production-ready quality
-5. If the task is unclear, output a minimal working version with a comment: # TODO: clarify
-
-Generate the code now."""
-
-    # Retry with 3 attempts
     last_error = None
     for attempt in range(3):
         try:
-            code, model_used = generate_code_openrouter(full_prompt)
-            if code.startswith('```'):
-                lines = code.split('\n')[1:]
-                if lines and lines[-1].strip() == '```':
-                    lines = lines[:-1]
-                code = '\n'.join(lines)
+            # Use the existing OpenRouter caller with custom prompt
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if not api_key:
+                return jsonify({'error': 'OPENROUTER_API_KEY missing'}), 500
 
-            ext_map = {
-                'python': 'py', 'javascript': 'js', 'bash': 'sh',
-                'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'html': 'html'
-            }
+            import requests as _rq
+            models = ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5"]
+            code = None
+            used_model = None
+            for m in models:
+                try:
+                    rr = _rq.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+                        json={"model": m, "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ], "temperature": 0.2, "max_tokens": 4000},
+                        timeout=90
+                    )
+                    if rr.status_code == 200:
+                        code = rr.json()["choices"][0]["message"]["content"].strip()
+                        used_model = m
+                        break
+                    last_error = m + ": " + str(rr.status_code)
+                except Exception as e:
+                    last_error = m + ": " + str(e)[:60]
+                    continue
+
+            if not code:
+                continue
+
+            if code.startswith("\`\`\`"):
+                lines = code.split("\n")[1:]
+                if lines and lines[-1].strip() == "\`\`\`":
+                    lines = lines[:-1]
+                code = "\n".join(lines)
+
+            ext_map = {'python': 'py', 'javascript': 'js', 'bash': 'sh',
+                       'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'html': 'html'}
             ext = ext_map.get(language, 'txt')
 
             return jsonify({
-                'status': 'generated',
-                'language': language,
-                'model_used': model_used,
-                'code': code,
-                'extension': ext,
-                'length': len(code),
-                'attempts': attempt + 1
+                'status': 'generated', 'language': language,
+                'model_used': used_model, 'code': code,
+                'extension': ext, 'length': len(code), 'attempts': attempt + 1
             })
         except Exception as e:
             last_error = str(e)
             continue
 
-    return jsonify({'error': f'Failed after 3 attempts: {last_error}'}), 500
+    return jsonify({'error': 'Failed: ' + str(last_error)}), 500
 
 with app.app_context():
     db.create_all()
