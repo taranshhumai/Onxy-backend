@@ -21,7 +21,13 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///mdm
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
@@ -699,6 +705,49 @@ def admin_seed_products():
         count += 1
     db.session.commit()
     return jsonify({'seeded': count})
+
+
+
+# ===== SaaS Builder Endpoint =====
+@app.route('/api/admin/build-saas', methods=['POST', 'OPTIONS'])
+def build_saas():
+    if request.method == 'OPTIONS':
+        return '', 200
+    data = request.json or {}
+    user_prompt = data.get('prompt', '').strip()
+    if not user_prompt:
+        return jsonify({'error': 'prompt required'}), 400
+
+    full_prompt = f"""Build a COMPLETE single-file HTML SaaS web application.
+
+REQUIREMENT: {user_prompt}
+
+Rules:
+- Output ONLY raw HTML (no markdown, no backticks, no explanation)
+- Include Tailwind CSS via CDN
+- Include localStorage for data persistence
+- Fully functional UI (add/delete/edit as needed)
+- Mobile responsive
+- Dark theme with purple accent
+- Single file, works when opened in browser"""
+
+    try:
+        code, model_used = generate_code_openrouter(full_prompt)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    if code.startswith('```'):
+        lines = code.split('\n')[1:]
+        if lines and lines[-1].strip() == '```':
+            lines = lines[:-1]
+        code = '\n'.join(lines)
+
+    return jsonify({
+        'status': 'generated',
+        'model_used': model_used,
+        'html': code,
+        'length': len(code)
+    })
 
 with app.app_context():
     db.create_all()
