@@ -398,34 +398,6 @@ h1{
     transition-duration:.01ms!important;
   }
 }
-
-#authBackdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:998;display:none;}
-#authBackdrop.open{display:block;}
-.auth-pip{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.96);z-index:999;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;max-width:420px;width:92%;}
-.auth-pip.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
-.auth-pip .field{display:block;margin:12px 0;}
-.auth-pip .field span{display:block;font-size:12px;margin-bottom:6px;opacity:.75;}
-.auth-pip .field input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.35);color:inherit;font:inherit;outline:none;}
-.auth-pip .field input:focus{border-color:rgba(255,255,255,.4);}
-.auth-pip .error{color:#ff6b6b;font-size:13px;min-height:18px;margin-top:8px;}
-.auth-pip .primary-action{width:100%;margin-top:14px;padding:11px;border-radius:8px;cursor:pointer;}
-.auth-pip .pip-state{margin-bottom:12px;opacity:.85;font-size:13px;}
-.auth-pip .pip-state span{display:block;opacity:.7;margin-top:4px;font-size:12px;}
-
-.pip textarea,.pip select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.35);color:inherit;font:inherit;outline:none;margin-top:4px;}
-.pip textarea{min-height:80px;resize:vertical;}
-.pip .row-actions{display:flex;gap:8px;margin-top:10px;}
-.pip .row-actions button{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-family:inherit;}
-.pip .primary-action{background:#7c3aed;color:#fff;}
-.pip .ghost-action{background:rgba(255,255,255,.08);color:inherit;}
-.pip .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
-.pip .tab{padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:transparent;color:inherit;cursor:pointer;font-size:12px;}
-.pip .tab.active{background:#7c3aed;border-color:#7c3aed;color:#fff;}
-.pip pre{background:rgba(0,0,0,.45);padding:10px;border-radius:8px;overflow:auto;max-height:260px;font-size:11px;white-space:pre-wrap;word-break:break-word;}
-.pip .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;margin-left:6px;}
-.pip .badge.ok{background:rgba(34,197,94,.25);color:#4ade80;}
-.pip .badge.fail{background:rgba(239,68,68,.25);color:#f87171;}
-
 </style>
 </head>
 
@@ -528,16 +500,6 @@ h1{
   </footer>
 </main>
 
-<div class="pip-backdrop" id="authBackdrop"></div>
-<section class="pip auth-pip" id="authPip" role="dialog">
-<div class="pip-head"><div><div class="pip-kicker">Secure Access</div><div class="pip-title">ONYX Login</div></div></div>
-<div class="pip-body"><form id="loginForm">
-<label class="field"><span>Username</span><input id="loginUsername" type="text" required></label>
-<label class="field"><span>Password</span><input id="loginPassword" type="password" required></label>
-<button class="primary-action" type="submit"><span id="loginButtonText">Sign in</span></button>
-<div id="loginError" class="error"></div>
-</form></div></section>
-
 <div class="pip-backdrop" id="backdrop" onclick="closePip()"></div>
 
 <section class="pip" id="pip" aria-modal="true" role="dialog">
@@ -570,58 +532,26 @@ function escapeHtml(value){
 }
 
 async function api(path, options = {}){
-  const token = localStorage.getItem('onyx_access_token');
-
-  const headers = {
-    'Accept':'application/json',
-    ...(options.headers || {})
-  };
-
-  if(token){
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   const response = await fetch(path, {
     credentials:'same-origin',
     ...options,
-    headers
+    headers:{
+      'Accept':'application/json',
+      ...(options.headers || {})
+    }
   });
 
   const text = await response.text();
   let data;
-
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = {raw:text};
-  }
-
-  if(response.status === 401){
-    localStorage.removeItem('onyx_access_token');
-    if(typeof showLogin==='function') showLogin();
-    throw new Error('Authentication required');
-  }
-
-  if(response.status === 403){
-    throw new Error('Permission denied');
-  }
+  try { data = text ? JSON.parse(text) : {}; }
+  catch { data = {raw:text}; }
 
   if(!response.ok){
     throw new Error(data.error || data.message || `HTTP ${response.status}`);
   }
-
   return data;
 }
 
-function showLogin(){$('authBackdrop').classList.add('open');$('authPip').classList.add('open');document.body.style.overflow='hidden';setTimeout(()=>$('loginUsername')?.focus(),50);}
-function hideLogin(){$('authPip').classList.remove('open');$('authBackdrop').classList.remove('open');document.body.style.overflow='';}
-async function login(e){e.preventDefault();const u=$('loginUsername').value.trim();const pw=$('loginPassword').value;const eb=$('loginError');const bt=$('loginButtonText');eb.textContent='';if(!u||!pw){eb.textContent='Username and password required.';return;}bt.textContent='Signing in...';try{const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},credentials:'same-origin',body:JSON.stringify({username:u,password:pw})});const d=await r.json();if(!r.ok||!d.access_token)throw new Error(d.error||'Login failed');localStorage.setItem('onyx_access_token',d.access_token);$('loginPassword').value='';hideLogin();await checkHealth();}catch(err){eb.textContent=err.message;}finally{bt.textContent='Sign in';}}
-function logout(){localStorage.removeItem('onyx_access_token');showLogin();}
-document.addEventListener('DOMContentLoaded',()=>{
-  $('loginForm')?.addEventListener('submit',login);
-  if(localStorage.getItem('onyx_access_token')){ checkHealth(); }
-  else { showLogin(); }
-});
 async function checkHealth(){
   try{
     const data = await api('/health');
@@ -655,139 +585,18 @@ function openPip(type){
 
   if(type === 'devices') loadDevices();
   else if(type === 'audit') loadAudit();
-  else if(type === 'files') renderFilesWorkspace();
-  else if(type === 'pipeline') renderPipelineWorkspace();
-  else if(type === 'admin') renderAdminWorkspace();
-}
-
-function renderFilesWorkspace(){
-  $('pipBody').innerHTML =
-    '<div class="pip-state"><strong>File workspace</strong><span>Enter a device ID to browse and upload files.</span></div>' +
-    '<label class="field"><span>Device ID</span><input id="filesDeviceId" type="text" placeholder="device-uuid"></label>' +
-    '<div class="row-actions"><button class="primary-action" onclick="loadFilesForDevice()">Load files</button></div>' +
-    '<div id="filesList" style="margin-top:12px"></div>' +
-    '<label class="field" style="margin-top:16px"><span>Upload file</span><input id="filesUploadInput" type="file"></label>' +
-    '<div class="row-actions"><button class="ghost-action" onclick="uploadFileForDevice()">Upload</button></div>';
-}
-async function loadFilesForDevice(){
-  var id = ($('filesDeviceId')?.value || '').trim();
-  if(!id){ $('filesList').innerHTML = '<div class="error">Device ID required.</div>'; return; }
-  $('filesList').innerHTML = '<div class="pip-state"><span>Loading...</span></div>';
-  try{
-    var files = await api('/api/files/list/' + encodeURIComponent(id));
-    var list = Array.isArray(files) ? files : [];
-    if(!list.length){ $('filesList').innerHTML = '<div class="pip-state"><strong>No files</strong><span>No files yet.</span></div>'; return; }
-    $('filesList').innerHTML = '<div class="data-list">' + list.map(function(f){ return '<div class="data-row"><span>' + escapeHtml(f.name) + '</span><span>' + (f.size || 0) + ' B</span></div>'; }).join('') + '</div>';
-  }catch(e){ $('filesList').innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>'; }
-}
-async function uploadFileForDevice(){
-  var id = ($('filesDeviceId')?.value || '').trim();
-  var f = $('filesUploadInput')?.files?.[0];
-  if(!id || !f){ alert('Device ID and file required'); return; }
-  var fd = new FormData(); fd.append('device_id', id); fd.append('file', f);
-  try{
-    var r = await fetch('/api/files/upload', {method:'POST', body:fd, credentials:'same-origin'});
-    var d = await r.json();
-    if(!r.ok) throw new Error(d.error || 'Upload failed');
-    alert('Uploaded'); loadFilesForDevice();
-  }catch(e){ alert(e.message); }
-}
-function renderPipelineWorkspace(){
-  $('pipBody').innerHTML =
-    '<div class="pip-state"><strong>Pipeline</strong><span>Generate + auto-verify Python code.</span></div>' +
-    '<label class="field"><span>Task</span><textarea id="plTask" placeholder="Describe the Python task..."></textarea></label>' +
-    '<label class="field"><span>Max attempts</span><input id="plMax" type="number" value="5" min="1" max="10"></label>' +
-    '<div class="row-actions"><button class="primary-action" onclick="runPipeline()">Run pipeline</button></div>' +
-    '<div id="plResult" style="margin-top:12px"></div>';
-}
-async function runPipeline(){
-  var task = ($('plTask')?.value || '').trim();
-  var maxA = parseInt($('plMax')?.value || '5', 10);
-  if(!task){ $('plResult').innerHTML = '<div class="error">Task required.</div>'; return; }
-  $('plResult').innerHTML = '<div class="pip-state"><span>Running (30-90s)...</span></div>';
-  try{
-    var data = await api('/api/admin/pipeline', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task: task, language:'python', max_attempts: maxA})});
-    var badge = data.verified ? '<span class="badge ok">VERIFIED</span>' : '<span class="badge fail">NOT VERIFIED</span>';
-    $('plResult').innerHTML =
-      '<div class="pip-state"><strong>Result ' + badge + '</strong><span>Attempts: ' + (data.attempts || 0) + '/' + (data.max_attempts || maxA) + '</span></div>' +
-      '<div style="margin-top:8px"><strong style="font-size:12px;opacity:.8">Output</strong><pre>' + escapeHtml(data.final_output || '(empty)') + '</pre></div>' +
-      '<div style="margin-top:8px"><strong style="font-size:12px;opacity:.8">Code</strong><pre>' + escapeHtml(data.final_code || '') + '</pre></div>';
-  }catch(e){ $('plResult').innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>'; }
-}
-function renderAdminWorkspace(){
-  $('pipBody').innerHTML =
-    '<div class="tabs">' +
-    '<button class="tab active" data-tab="products" onclick="adminTab(\'products\')">Products</button>' +
-    '<button class="tab" data-tab="build" onclick="adminTab(\'build\')">Build SaaS</button>' +
-    '<button class="tab" data-tab="term" onclick="adminTab(\'term\')">Terminal LLM</button>' +
-    '</div><div id="adminBody"></div>';
-  adminTab('products');
-}
-function adminTab(name){
-  document.querySelectorAll('.pip .tab').forEach(function(t){ t.classList.toggle('active', t.dataset.tab === name); });
-  if(name === 'products') renderAdminProducts();
-  else if(name === 'build') renderAdminBuild();
-  else if(name === 'term') renderAdminTerm();
-}
-async function renderAdminProducts(){
-  $('adminBody').innerHTML = '<div class="pip-state"><span>Loading...</span></div>';
-  try{
-    var items = await api('/api/admin/products/all');
-    var list = Array.isArray(items) ? items : (items.products || items.data || []);
-    var html = '<div class="row-actions"><button class="ghost-action" onclick="seedProducts()">Seed defaults</button></div>';
-    if(!list.length){ html += '<div class="pip-state"><strong>No products</strong><span>Click Seed defaults.</span></div>'; }
-    else { html += '<div class="data-list">' + list.map(function(p){ return '<div class="data-row"><span>' + escapeHtml(p.name || p.id || 'product') + '</span><span>' + escapeHtml(String(p.price || p.status || '')) + '</span></div>'; }).join('') + '</div>'; }
-    $('adminBody').innerHTML = html;
-  }catch(e){ $('adminBody').innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div><div class="row-actions"><button class="ghost-action" onclick="seedProducts()">Seed defaults</button></div>'; }
-}
-async function seedProducts(){
-  try{ await api('/api/admin/seed', {method:'POST'}); renderAdminProducts(); }
-  catch(e){ alert(e.message); }
-}
-function renderAdminBuild(){
-  $('adminBody').innerHTML =
-    '<div class="pip-state"><strong>Build SaaS</strong><span>Generate a single-file HTML SaaS from a prompt.</span></div>' +
-    '<label class="field"><span>Prompt</span><textarea id="bsPrompt" placeholder="e.g. expense tracker with categories"></textarea></label>' +
-    '<div class="row-actions"><button class="primary-action" onclick="runBuildSaas()">Generate</button></div>' +
-    '<div id="bsResult" style="margin-top:12px"></div>';
-}
-async function runBuildSaas(){
-  var prompt = ($('bsPrompt')?.value || '').trim();
-  if(!prompt){ $('bsResult').innerHTML = '<div class="error">Prompt required.</div>'; return; }
-  $('bsResult').innerHTML = '<div class="pip-state"><span>Generating (20-60s)...</span></div>';
-  try{
-    var data = await api('/api/admin/build-saas', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt: prompt})});
-    var html = data.html || '';
-    var url = URL.createObjectURL(new Blob([html], {type:'text/html'}));
-    $('bsResult').innerHTML =
-      '<div class="pip-state"><strong>Generated</strong><span>Model: ' + escapeHtml(data.model_used || '-') + ' | ' + (data.length || 0) + ' chars</span></div>' +
-      '<div class="row-actions"><a class="ghost-action" style="text-align:center;text-decoration:none;padding:10px;border-radius:8px;display:block" href="' + url + '" download="saas.html">Download HTML</a></div>' +
-      '<pre style="margin-top:8px">' + escapeHtml(html.slice(0, 1500)) + (html.length > 1500 ? '\n...truncated' : '') + '</pre>';
-  }catch(e){ $('bsResult').innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>'; }
-}
-function renderAdminTerm(){
-  $('adminBody').innerHTML =
-    '<div class="pip-state"><strong>Terminal LLM</strong><span>Generate code in any language.</span></div>' +
-    '<label class="field"><span>Prompt</span><textarea id="tlPrompt" placeholder="e.g. parse nginx log and count 404s"></textarea></label>' +
-    '<label class="field"><span>Language</span><select id="tlLang"><option value="auto">Auto</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="bash">Bash</option><option value="typescript">TypeScript</option><option value="go">Go</option><option value="rust">Rust</option><option value="html">HTML</option></select></label>' +
-    '<div class="row-actions"><button class="primary-action" onclick="runTerminalLLM()">Generate</button></div>' +
-    '<div id="tlResult" style="margin-top:12px"></div>';
-}
-async function runTerminalLLM(){
-  var prompt = ($('tlPrompt')?.value || '').trim();
-  var lang = $('tlLang')?.value || 'auto';
-  if(!prompt){ $('tlResult').innerHTML = '<div class="error">Prompt required.</div>'; return; }
-  $('tlResult').innerHTML = '<div class="pip-state"><span>Generating (20-60s)...</span></div>';
-  try{
-    var data = await api('/api/admin/terminal-llm', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt: prompt, language: lang})});
-    var code = data.code || '';
-    var fname = 'generated.' + (data.extension || 'txt');
-    var url = URL.createObjectURL(new Blob([code], {type:'text/plain'}));
-    $('tlResult').innerHTML =
-      '<div class="pip-state"><strong>Generated</strong><span>Model: ' + escapeHtml(data.model_used || '-') + ' | attempts: ' + (data.attempts || 0) + '</span></div>' +
-      '<div class="row-actions"><a class="ghost-action" style="text-align:center;text-decoration:none;padding:10px;border-radius:8px;display:block" href="' + url + '" download="' + fname + '">Download ' + fname + '</a></div>' +
-      '<pre style="margin-top:8px">' + escapeHtml(code) + '</pre>';
-  }catch(e){ $('tlResult').innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>'; }
+  else if(type === 'files') renderInfo(
+    'File workspace',
+    'Select a device from the Devices workspace to work with its authorized files.'
+  );
+  else if(type === 'pipeline') renderInfo(
+    'Pipeline workspace',
+    'Pipeline controls are available through the existing backend contract. The visual workspace is ready for the next integration layer.'
+  );
+  else if(type === 'admin') renderInfo(
+    'Administration',
+    'Administrative workspace ready. Existing backend administration endpoints remain unchanged.'
+  );
 }
 
 function closePip(){

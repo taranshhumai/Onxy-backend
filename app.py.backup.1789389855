@@ -812,9 +812,9 @@ def terminal_llm():
             if not code:
                 continue
 
-            if code.startswith("```"):
+            if code.startswith("\`\`\`"):
                 lines = code.split("\n")[1:]
-                if lines and lines[-1].strip() == "```":
+                if lines and lines[-1].strip() == "\`\`\`":
                     lines = lines[:-1]
                 code = "\n".join(lines)
 
@@ -978,5 +978,10 @@ with app.app_context():
 def health_check():
     return jsonify({'status': 'ok', 'service': 'onyx-mdm', 'time': str(datetime.datetime.utcnow())}), 200
 
+@app.route('/')
+def root():
+    return jsonify({'service': 'ONYX MDM', 'status': 'live', 'version': '1.0'}), 200
+
+
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
